@@ -3,7 +3,7 @@ import { io } from 'socket.io-client';
 import { loadDevice, createSendTransport, publishStream, consumeStream, getDevice } from '../services/mediaService';
 import VideoPlayer from './VideoPlayer';
 
-const SERVER_URL = process.env.REACT_APP_SERVER_URL;
+const SERVER_URL = process.env.REACT_APP_SERVER_URL || 'https://meeting-online-zcrm.onrender.com';
 
 function Room({ roomId, userName }) {
   const [localStream, setLocalStream] = useState(null);
