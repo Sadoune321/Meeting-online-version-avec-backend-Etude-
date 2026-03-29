@@ -36,7 +36,7 @@ app.get('/health', (req, res) => {
 });
 
 const keepAlive = () => {
-  const port = process.env.PORT  5000;
+  const port = process.env.PORT || 5000;
   setInterval(() => {
     http.get('http://localhost:' + port + '/health', (res) => {
       console.log('Keep alive ping - status: ' + res.statusCode);
