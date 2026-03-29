@@ -16,8 +16,8 @@ const io = new Server(server, {
     methods: ['GET', 'POST'],
     credentials: false,
   },
-  pingTimeout: parseInt(process.env.SOCKET_PING_TIMEOUT)  60000,
-  pingInterval: parseInt(process.env.SOCKET_PING_INTERVAL)  25000,
+  pingTimeout: parseInt(process.env.SOCKET_PING_TIMEOUT) || 60000,
+  pingInterval: parseInt(process.env.SOCKET_PING_INTERVAL) || 25000,
   transports: ['websocket', 'polling'],
 });
 
