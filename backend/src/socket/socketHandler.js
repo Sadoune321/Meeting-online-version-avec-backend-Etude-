@@ -2,7 +2,7 @@ const { getOrCreateRoom, createTransport, rooms } = require('../services/mediaso
 
 module.exports = (io) => {
   io.on('connection', (socket) => {
-    console.log(Client connected: ${socket.id});
+    console.log('Client connected: ' + socket.id);
 
     socket.on('joinRoom', async ({ roomId, userName }, callback) => {
       try {
@@ -27,9 +27,9 @@ module.exports = (io) => {
 
         callback({ rtpCapabilities, existingProducers });
         socket.to(roomId).emit('newPeer', { peerId: socket.id, userName });
-        console.log(${userName} joined room: ${roomId}, existing producers: ${existingProducers.length});
+        console.log(userName + ' joined room: ' + roomId + ', existing producers: ' + existingProducers.length);
       } catch (err) {
-        console.error('joinRoom error:', err.message);
+        console.error('joinRoom error: ' + err.message);
         callback({ error: err.message });
       }
     });
@@ -44,7 +44,7 @@ module.exports = (io) => {
         }
         callback({ params });
       } catch (err) {
-        console.error('createTransport error:', err.message);
+        console.error('createTransport error: ' + err.message);
         callback({ error: err.message });
       }
     });
@@ -52,11 +52,11 @@ module.exports = (io) => {
     socket.on('connectTransport', async ({ dtlsParameters, direction }, callback) => {
       try {
         const transport = direction === 'send' ? socket._sendTransport : socket._recvTransport;
-        if (!transport) return callback({ error: Transport ${direction} not found });
+        if (!transport) return callback({ error: 'Transport ' + direction + ' not found' });
         await transport.connect({ dtlsParameters });
         callback({ success: true });
       } catch (err) {
-        console.error('connectTransport error:', err.message);
+        console.error('connectTransport error: ' + err.message);
         callback({ error: err.message });
       }
     });
@@ -77,7 +77,7 @@ module.exports = (io) => {
 
         callback({ id: producer.id });
       } catch (err) {
-        console.error('produce error:', err.message);
+        console.error('produce error: ' + err.message);
         callback({ error: err.message });
       }
     });
@@ -105,13 +105,13 @@ module.exports = (io) => {
           rtpParameters: consumer.rtpParameters,
         });
       } catch (err) {
-        console.error('consume error:', err.message);
+        console.error('consume error: ' + err.message);
         callback({ error: err.message });
       }
     });
 
     socket.on('disconnect', () => {
-      console.log(Client disconnected: ${socket.id});
+      console.log('Client disconnected: ' + socket.id);
       rooms.forEach((room, roomId) => {
         if (room.peers.has(socket.id)) {
           room.peers.delete(socket.id);
