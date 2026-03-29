@@ -3,7 +3,7 @@ import { io } from 'socket.io-client';
 import { loadDevice, createSendTransport, publishStream, consumeStream, getDevice } from '../services/mediaService';
 import VideoPlayer from './VideoPlayer';
 
-const SERVER_URL = process.env.REACT_APP_SERVER_URL || 'http://127.0.0.1:5000';
+const SERVER_URL = process.env.REACT_APP_SERVER_URL;
 
 function Room({ roomId, userName }) {
   const [localStream, setLocalStream] = useState(null);
