@@ -28,89 +28,101 @@ function Room({ roomId, userName }) {
     socketRef.current = socket;
 
     socket.on('connect', () => {
-      console.log(' Socket connected:', socket.id);
+      console.log('✅ Socket connected:', socket.id);
     });
 
     socket.on('connect_error', (err) => {
-      console.error(' Socket error:', err.message);
+      console.error('❌ Socket error:', err.message);
     });
 
     const init = async () => {
-      
       const hasMedia = navigator.mediaDevices && navigator.mediaDevices.getUserMedia;
+      let stream = null;
 
       if (hasMedia) {
         try {
-          const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+          stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
           setLocalStream(stream);
-          console.log(' Local stream obtained');
-
-          socket.emit('joinRoom', { roomId, userName }, async ({ rtpCapabilities, error }) => {
-            if (error) return console.error(' joinRoom error:', error);
-            console.log(' Joined room');
-
-            await loadDevice(rtpCapabilities);
-            console.log(' Device loaded');
-
-            await createSendTransport(socket, roomId);
-            console.log(' Send transport created');
-
-            await publishStream(stream);
-            console.log(' Stream published');
-          });
-
+          console.log('📷 Local stream obtained');
         } catch (err) {
-          console.error(' Media error:', err.message);
-          
-          socket.emit('joinRoom', { roomId, userName }, async ({ rtpCapabilities, error }) => {
-            if (error) return console.error(' joinRoom error:', error);
-            await loadDevice(rtpCapabilities);
-            await createSendTransport(socket, roomId);
-          });
+          console.error('❌ Media error:', err.message);
         }
       } else {
-        
-        console.warn(' getUserMedia non disponible - HTTPS requis sur mobile');
-        socket.emit('joinRoom', { roomId, userName }, async ({ rtpCapabilities, error }) => {
-          if (error) return console.error(' joinRoom error:', error);
-          console.log(' Joined room sans caméra');
-          await loadDevice(rtpCapabilities);
-          await createSendTransport(socket, roomId);
-        });
+        console.warn('⚠️ getUserMedia non disponible - HTTPS requis sur mobile');
       }
 
-      
+      socket.emit('joinRoom', { roomId, userName }, async ({ rtpCapabilities, existingProducers, error }) => {
+        if (error) return console.error('❌ joinRoom error:', error);
+        console.log('✅ Joined room, existing producers:', existingProducers?.length);
+
+        await loadDevice(rtpCapabilities);
+        console.log('✅ Device loaded');
+
+        await createSendTransport(socket, roomId);
+        console.log('✅ Send transport created');
+
+        if (stream) {
+          await publishStream(stream);
+          console.log('✅ Stream published');
+        }
+
+        // Consommer les producers existants
+        if (existingProducers && existingProducers.length > 0) {
+          for (const { producerId, peerId, kind, userName: peerName } of existingProducers) {
+            console.log('🎬 Consuming existing producer:', producerId, 'kind:', kind);
+            try {
+              const device = getDevice();
+              const peerStream = await consumeStream(socket, roomId, producerId, device.rtpCapabilities);
+              setPeers((prev) => {
+                const exists = prev.find((p) => p.peerId === peerId);
+                if (exists) {
+                  return prev.map((p) =>
+                    p.peerId === peerId ? { ...p, stream: peerStream } : p
+                  );
+                }
+                return [...prev, { peerId, userName: peerName, stream: peerStream }];
+              });
+            } catch (err) {
+              console.error('❌ consume existing error:', err);
+            }
+          }
+        }
+      });
+
+      // Nouveau peer
       socket.on('newPeer', ({ peerId, userName: peerName }) => {
-        console.log(' New peer:', peerName);
+        console.log('👤 New peer:', peerName);
         setPeers((prev) => {
           if (prev.find((p) => p.peerId === peerId)) return prev;
           return [...prev, { peerId, userName: peerName, stream: null }];
         });
       });
 
-      
+      // Nouveau producer disponible
       socket.on('newProducer', async ({ producerId, peerId, kind }) => {
-        console.log(' New producer:', producerId, 'kind:', kind);
+        console.log('🎬 New producer:', producerId, 'kind:', kind);
         try {
           const device = getDevice();
-          if (!device) return console.error(' Device not loaded');
+          if (!device) return console.error('❌ Device not loaded');
           const peerStream = await consumeStream(socket, roomId, producerId, device.rtpCapabilities);
-          console.log('Consumed stream from:', peerId);
+          console.log('✅ Consumed stream from:', peerId);
           setPeers((prev) => {
             const exists = prev.find((p) => p.peerId === peerId);
             if (exists) {
-              return prev.map((p) => p.peerId === peerId ? { ...p, stream: peerStream } : p);
+              return prev.map((p) =>
+                p.peerId === peerId ? { ...p, stream: peerStream } : p
+              );
             }
             return [...prev, { peerId, userName: 'Participant', stream: peerStream }];
           });
         } catch (err) {
-          console.error(' consumeStream error:', err);
+          console.error('❌ consumeStream error:', err);
         }
       });
 
       // Peer parti
       socket.on('peerLeft', ({ peerId }) => {
-        console.log(' Peer left:', peerId);
+        console.log('👋 Peer left:', peerId);
         setPeers((prev) => prev.filter((p) => p.peerId !== peerId));
       });
     };
@@ -148,7 +160,7 @@ function Room({ roomId, userName }) {
 
       {!navigator.mediaDevices && (
         <p style={styles.warning}>
-           Caméra non disponible — HTTPS requis sur mobile
+          Camera non disponible — HTTPS requis sur mobile
         </p>
       )}
 
@@ -161,13 +173,13 @@ function Room({ roomId, userName }) {
 
       <div style={styles.controls}>
         <button style={styles.btn} onClick={toggleMute}>
-          {muted ? ' Unmute' : ' Mute'}
+          {muted ? '🔇 Unmute' : '🎤 Mute'}
         </button>
         <button style={styles.btn} onClick={toggleVideo}>
-          {videoOff ? ' Start Video' : ' Stop Video'}
+          {videoOff ? '📷 Start Video' : '📹 Stop Video'}
         </button>
         <button style={{ ...styles.btn, backgroundColor: '#e94560' }} onClick={leaveRoom}>
-           Quitter
+          🚪 Quitter
         </button>
       </div>
     </div>
@@ -175,11 +187,33 @@ function Room({ roomId, userName }) {
 }
 
 const styles = {
-  container: { backgroundColor: '#1a1a2e', minHeight: '100vh', padding: '20px', color: '#fff' },
-  title: { textAlign: 'center', marginBottom: '20px' },
-  warning: { textAlign: 'center', color: '#e94560', marginBottom: '16px' },
-  grid: { display: 'flex', flexWrap: 'wrap', gap: '16px', justifyContent: 'center' },
-  controls: { display: 'flex', justifyContent: 'center', gap: '16px', marginTop: '30px' },
+  container: {
+    backgroundColor: '#1a1a2e',
+    minHeight: '100vh',
+    padding: '20px',
+    color: '#fff',
+  },
+  title: {
+    textAlign: 'center',
+    marginBottom: '20px',
+  },
+  warning: {
+    textAlign: 'center',
+    color: '#e94560',
+    marginBottom: '16px',
+  },
+  grid: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '16px',
+    justifyContent: 'center',
+  },
+  controls: {
+    display: 'flex',
+    justifyContent: 'center',
+    gap: '16px',
+    marginTop: '30px',
+  },
   btn: {
     padding: '12px 24px',
     borderRadius: '8px',
