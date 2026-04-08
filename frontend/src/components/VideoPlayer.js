@@ -1,6 +1,6 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useRef, useEffect } from 'react';
 
-function VideoPlayer({ stream, userName, muted = false }) {
+export default function VideoPlayer({ stream, userName, muted = false }) {
   const videoRef = useRef(null);
 
   useEffect(() => {
@@ -10,7 +10,7 @@ function VideoPlayer({ stream, userName, muted = false }) {
     video.srcObject = stream;
     video.onloadedmetadata = () => {
       video.play().catch((err) => {
-        console.error('Video play error:', err.message);
+        console.warn('Video play error (autoplay blocked?):', err.message);
       });
     };
   }, [stream]);
@@ -22,7 +22,7 @@ function VideoPlayer({ stream, userName, muted = false }) {
           ref={videoRef}
           autoPlay
           playsInline
-          muted={muted}
+          muted={muted} // muted=true pour autoplay local et mobile
           style={styles.video}
         />
       ) : (
@@ -71,5 +71,3 @@ const styles = {
     fontSize: '14px',
   },
 };
-
-export default VideoPlayer;
