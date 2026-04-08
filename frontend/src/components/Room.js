@@ -3,6 +3,7 @@ import { io } from 'socket.io-client';
 import {
   loadDevice,
   createSendTransport,
+  createRecvTransport,
   publishStream,
   consumeStream,
   getDevice,
@@ -13,28 +14,19 @@ const SERVER_URL = process.env.REACT_APP_SERVER_URL || 'https://meeting-online-z
 
 export default function Room({ roomId, userName }) {
   const [localStream, setLocalStream] = useState(null);
-  const [peers, setPeers] = useState([]); // { peerId, userName, stream }
+  const [peers, setPeers] = useState([]);
   const [muted, setMuted] = useState(false);
   const [videoOff, setVideoOff] = useState(false);
   const socketRef = useRef(null);
-  const initializedRef = useRef(false);
 
   useEffect(() => {
-    if (initializedRef.current) return;
-    initializedRef.current = true;
-
-    const socket = io(SERVER_URL, {
-      transports: ['polling', 'websocket'],
-      forceNew: true,
-      reconnection: false,
-    });
+    const socket = io(SERVER_URL, { transports: ['websocket', 'polling'] });
     socketRef.current = socket;
 
     socket.on('connect', () => console.log('✅ Socket connected:', socket.id));
     socket.on('connect_error', (err) => console.error('❌ Socket error:', err.message));
 
     const init = async () => {
-      // 1️⃣ Obtenir le flux local
       let stream = null;
       try {
         stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
@@ -44,84 +36,73 @@ export default function Room({ roomId, userName }) {
         console.error('❌ getUserMedia error:', err.message);
       }
 
-      // 2️⃣ Rejoindre la room
       socket.emit('joinRoom', { roomId, userName }, async ({ rtpCapabilities, existingProducers, error }) => {
         if (error) return console.error('❌ joinRoom error:', error);
 
-        // 3️⃣ Charger le device et créer transport
         await loadDevice(rtpCapabilities);
         console.log('✅ Device loaded');
+
         await createSendTransport(socket, roomId);
         console.log('✅ Send transport created');
 
-        // 4️⃣ Publier le flux local
+        await createRecvTransport(socket, roomId);
+        console.log('✅ Recv transport created');
+
         if (stream) {
           await publishStream(stream);
           console.log('✅ Local stream published');
         }
 
-        // 5️⃣ Consommer les producers existants
+        // Consommer les producteurs existants
         if (existingProducers?.length > 0) {
-          for (const { producerId, peerId, kind, userName: peerName } of existingProducers) {
+          const device = getDevice();
+          for (const { producerId, peerId, userName: peerName } of existingProducers) {
             try {
-              const device = getDevice();
               const peerStream = await consumeStream(socket, roomId, producerId, device.rtpCapabilities);
               setPeers((prev) => [...prev, { peerId, userName: peerName, stream: peerStream }]);
-            } catch (err) {
-              console.error('❌ consume existing producer error:', err);
-            }
+            } catch (err) { console.error('❌ consume existing error:', err); }
           }
         }
       });
 
-      // 6️⃣ Nouveau peer rejoint
       socket.on('newPeer', ({ peerId, userName: peerName }) => {
-        console.log('👤 New peer:', peerName);
         setPeers((prev) => [...prev, { peerId, userName: peerName, stream: null }]);
       });
 
-      // 7️⃣ Nouveau producer disponible
-      socket.on('newProducer', async ({ producerId, peerId, kind }) => {
+      socket.on('newProducer', async ({ producerId, peerId }) => {
         try {
           const device = getDevice();
-          if (!device) return;
           const peerStream = await consumeStream(socket, roomId, producerId, device.rtpCapabilities);
-          console.log('✅ Consumed stream from peer:', peerId);
-          setPeers((prev) =>
-            prev.map((p) => (p.peerId === peerId ? { ...p, stream: peerStream } : p))
-          );
-        } catch (err) {
-          console.error('❌ consumeStream error:', err);
-        }
+          setPeers((prev) => prev.map(p => p.peerId === peerId ? { ...p, stream: peerStream } : p));
+        } catch (err) { console.error('❌ consumeStream error:', err); }
       });
 
-      // 8️⃣ Peer parti
       socket.on('peerLeft', ({ peerId }) => {
-        console.log('👋 Peer left:', peerId);
-        setPeers((prev) => prev.filter((p) => p.peerId !== peerId));
+        setPeers((prev) => prev.filter(p => p.peerId !== peerId));
       });
     };
 
     init().catch(console.error);
 
     return () => socket.disconnect();
-  }, []);
+  }, [roomId, userName]);
 
-  // 9️⃣ Contrôles du local
   const toggleMute = () => {
     if (localStream) {
-      localStream.getAudioTracks().forEach((t) => (t.enabled = !t.enabled));
-      setMuted((prev) => !prev);
+      localStream.getAudioTracks().forEach(t => t.enabled = !t.enabled);
+      setMuted(prev => !prev);
     }
   };
+
   const toggleVideo = () => {
     if (localStream) {
-      localStream.getVideoTracks().forEach((t) => (t.enabled = !t.enabled));
-      setVideoOff((prev) => !prev);
+      localStream.getVideoTracks().forEach(t => t.enabled = !t.enabled);
+      setVideoOff(prev => !prev);
     }
   };
+
   const leaveRoom = () => {
-    if (localStream) localStream.getTracks().forEach((t) => t.stop());
+    if (localStream) localStream.getTracks().forEach(t => t.stop());
     if (socketRef.current) socketRef.current.disconnect();
     window.location.reload();
   };
@@ -129,19 +110,12 @@ export default function Room({ roomId, userName }) {
   return (
     <div style={styles.container}>
       <h2 style={styles.title}>Room: {roomId}</h2>
-
       <div style={styles.grid}>
         {localStream && <VideoPlayer stream={localStream} userName={`${userName} (Vous)`} muted={true} />}
-        {peers.map((peer) => (
-          <VideoPlayer
-            key={peer.peerId}
-            stream={peer.stream}
-            userName={peer.userName}
-            muted={false} // activer le son des autres peers
-          />
+        {peers.map(peer => (
+          <VideoPlayer key={peer.peerId} stream={peer.stream} userName={peer.userName} muted={false} />
         ))}
       </div>
-
       <div style={styles.controls}>
         <button style={styles.btn} onClick={toggleMute}>{muted ? '🔇 Unmute' : '🎤 Mute'}</button>
         <button style={styles.btn} onClick={toggleVideo}>{videoOff ? '📷 Start Video' : '📹 Stop Video'}</button>
