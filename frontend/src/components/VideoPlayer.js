@@ -9,9 +9,7 @@ export default function VideoPlayer({ stream, userName, muted = false }) {
 
     video.srcObject = stream;
     video.onloadedmetadata = () => {
-      video.play().catch((err) => {
-        console.warn('Video play error (autoplay blocked?):', err.message);
-      });
+      video.play().catch((err) => console.warn('Video autoplay error:', err.message));
     };
   }, [stream]);
 
@@ -22,7 +20,7 @@ export default function VideoPlayer({ stream, userName, muted = false }) {
           ref={videoRef}
           autoPlay
           playsInline
-          muted={muted} // muted=true pour autoplay local et mobile
+          muted={muted}
           style={styles.video}
         />
       ) : (
@@ -44,30 +42,8 @@ const styles = {
     width: '320px',
     height: '240px',
   },
-  video: {
-    width: '100%',
-    height: '100%',
-    objectFit: 'cover',
-  },
-  placeholder: {
-    width: '100%',
-    height: '100%',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  placeholderText: {
-    color: '#fff',
-    fontSize: '14px',
-  },
-  name: {
-    position: 'absolute',
-    bottom: '8px',
-    left: '8px',
-    color: '#fff',
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    padding: '2px 8px',
-    borderRadius: '4px',
-    fontSize: '14px',
-  },
+  video: { width: '100%', height: '100%', objectFit: 'cover' },
+  placeholder: { width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' },
+  placeholderText: { color: '#fff', fontSize: '14px' },
+  name: { position: 'absolute', bottom: '8px', left: '8px', color: '#fff', backgroundColor: 'rgba(0,0,0,0.5)', padding: '2px 8px', borderRadius: '4px', fontSize: '14px' },
 };
