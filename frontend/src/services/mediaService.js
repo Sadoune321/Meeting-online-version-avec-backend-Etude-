@@ -4,6 +4,7 @@ let device = null;
 let sendTransport = null;
 let recvTransport = null;
 
+// Charger le device
 export const loadDevice = async (rtpCapabilities) => {
   device = new mediasoupClient.Device();
   await device.load({ routerRtpCapabilities: rtpCapabilities });
@@ -13,10 +14,12 @@ export const loadDevice = async (rtpCapabilities) => {
 
 export const getDevice = () => device;
 
+// Créer transport pour envoyer
 export const createSendTransport = async (socket, roomId) => {
   return new Promise((resolve, reject) => {
     socket.emit('createTransport', { roomId, direction: 'send' }, ({ params, error }) => {
       if (error) return reject(new Error(error));
+
       sendTransport = device.createSendTransport(params);
 
       sendTransport.on('connect', ({ dtlsParameters }, callback, errback) => {
@@ -38,10 +41,12 @@ export const createSendTransport = async (socket, roomId) => {
   });
 };
 
+// Créer transport pour recevoir
 export const createRecvTransport = async (socket, roomId) => {
   return new Promise((resolve, reject) => {
     socket.emit('createTransport', { roomId, direction: 'recv' }, ({ params, error }) => {
       if (error) return reject(new Error(error));
+
       recvTransport = device.createRecvTransport(params);
 
       recvTransport.on('connect', ({ dtlsParameters }, callback, errback) => {
@@ -56,6 +61,7 @@ export const createRecvTransport = async (socket, roomId) => {
   });
 };
 
+// Publier le flux local
 export const publishStream = async (stream) => {
   const producers = [];
   for (const track of stream.getTracks()) {
@@ -65,6 +71,7 @@ export const publishStream = async (stream) => {
   return producers;
 };
 
+// Consommer un producer
 export const consumeStream = async (socket, roomId, producerId, rtpCapabilities) => {
   if (!recvTransport) {
     await createRecvTransport(socket, roomId);
@@ -83,6 +90,7 @@ export const consumeStream = async (socket, roomId, producerId, rtpCapabilities)
   });
 };
 
+// Réinitialiser les medias
 export const resetMedia = () => {
   device = null;
   sendTransport = null;
