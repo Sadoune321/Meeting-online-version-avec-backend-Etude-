@@ -6,9 +6,18 @@ export default function VideoPlayer({ stream, userName, muted = false }) {
 
   useEffect(() => {
     const video = videoRef.current;
-    if (!video || !stream) return;
+    if (!video) return;
 
+    if (!stream) {
+      video.srcObject = null;
+      return;
+    }
+
+    // ✅ Arrêter le stream précédent proprement
     video.pause();
+    video.srcObject = null;
+
+    // ✅ Assigner le nouveau stream
     video.srcObject = stream;
 
     const playVideo = async () => {
@@ -23,8 +32,19 @@ export default function VideoPlayer({ stream, userName, muted = false }) {
       }
     };
 
-    playVideo();
-  }, [stream]);
+    // ✅ Attendre que les métadonnées soient chargées
+    video.onloadedmetadata = () => {
+      playVideo();
+    };
+
+    // ✅ Fallback si onloadedmetadata ne se déclenche pas
+    setTimeout(() => {
+      if (video.readyState >= 2) {
+        playVideo();
+      }
+    }, 500);
+
+  }, [stream, userName]);
 
   const handleClick = async () => {
     const video = videoRef.current;
@@ -32,6 +52,7 @@ export default function VideoPlayer({ stream, userName, muted = false }) {
     try {
       await video.play();
       setNeedsClick(false);
+      console.log('✅ Video started by click:', userName);
     } catch (err) {
       console.error('❌ play error:', err);
     }
@@ -44,18 +65,28 @@ export default function VideoPlayer({ stream, userName, muted = false }) {
         autoPlay
         playsInline
         muted={muted}
-        style={styles.video}
+        style={{
+          ...styles.video,
+          display: stream ? 'block' : 'none',
+        }}
       />
+
+      {/* Placeholder si pas de stream */}
       {!stream && (
         <div style={styles.overlay}>
+          <div style={styles.cameraIcon}>📷</div>
           <span style={styles.text}>En attente...</span>
         </div>
       )}
+
+      {/* Bouton cliquer pour démarrer */}
       {stream && needsClick && (
         <div style={styles.overlay}>
-          <span style={styles.text}>👆 Cliquez pour démarrer</span>
+          <span style={styles.clickText}>👆 Cliquez pour démarrer</span>
         </div>
       )}
+
+      {/* Nom du peer */}
       <span style={styles.name}>{userName}</span>
     </div>
   );
@@ -70,6 +101,7 @@ const styles = {
     width: '320px',
     height: '240px',
     cursor: 'pointer',
+    flexShrink: 0,
   },
   video: {
     width: '100%',
@@ -80,11 +112,27 @@ const styles = {
     position: 'absolute',
     inset: 0,
     display: 'flex',
+    flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(0,0,0,0.4)',
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    gap: '8px',
   },
-  text: { color: '#fff', fontSize: '14px' },
+  cameraIcon: {
+    fontSize: '32px',
+    opacity: 0.4,
+  },
+  text: {
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: '14px',
+  },
+  clickText: {
+    color: '#fff',
+    fontSize: '14px',
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    padding: '8px 16px',
+    borderRadius: '8px',
+  },
   name: {
     position: 'absolute',
     bottom: '8px',
