@@ -17,7 +17,10 @@ module.exports = (io) => {
           existingPeers.push({ peerId, userName: peer.userName });
         });
 
-        const peerId = isHost ? `${roomId}-host` : `${roomId}-${userName}`;
+        const peerId = isHost
+          ? `${roomId}-host`
+          : `${roomId}-${userName}`;
+
         room.set(peerId, { userName, socketId: socket.id });
         socket._roomId = roomId;
         socket._peerId = peerId;
@@ -26,8 +29,11 @@ module.exports = (io) => {
         callback({ existingPeers, isHost });
         socket.to(roomId).emit('newPeer', { peerId, userName });
 
-        console.log(`${userName} joined room: ${roomId} as ${isHost ? 'HOST' : 'GUEST'}`);
+        console.log(
+          `${userName} joined room: ${roomId} as ${isHost ? 'HOST' : 'GUEST'}`
+        );
       } catch (err) {
+        console.error('joinRoom error:', err.message);
         callback({ error: err.message });
       }
     });
@@ -35,10 +41,14 @@ module.exports = (io) => {
     socket.on('disconnect', () => {
       const roomId = socket._roomId;
       const peerId = socket._peerId;
+
       if (roomId && rooms.has(roomId)) {
         rooms.get(roomId).delete(peerId);
         socket.to(roomId).emit('peerLeft', { peerId });
-        if (rooms.get(roomId).size === 0) rooms.delete(roomId);
+        if (rooms.get(roomId).size === 0) {
+          rooms.delete(roomId);
+        }
+        console.log(`Peer ${peerId} left room ${roomId}`);
       }
       console.log('❌ Disconnected:', socket.id);
     });
