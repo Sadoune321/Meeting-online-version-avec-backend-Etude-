@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
 import {
   loadDevice, createSendTransport, createRecvTransport,
-  publishStream, consumeStream, getDevice,
+  publishStream, consumeStream, getDevice, resetMedia,
 } from '../services/mediaService';
 import VideoPlayer from './VideoPlayer';
 
@@ -49,13 +49,17 @@ export default function Room({ roomId, userName }) {
           console.log('✅ Local stream published');
         }
 
-        // Consommer les producers existants
         if (existingProducers?.length > 0) {
           const device = getDevice();
           for (const { producerId, peerId, userName: peerName } of existingProducers) {
             try {
               const peerStream = await consumeStream(socket, roomId, producerId, device.rtpCapabilities);
-              setPeers((prev) => [...prev, { peerId, userName: peerName, stream: peerStream }]);
+              setPeers((prev) => {
+                if (prev.find(p => p.peerId === peerId)) {
+                  return prev.map(p => p.peerId === peerId ? { ...p, stream: peerStream } : p);
+                }
+                return [...prev, { peerId, userName: peerName, stream: peerStream }];
+              });
               console.log('✅ Existing producer consumed:', peerId);
             } catch (err) {
               console.error('❌ consume existing error:', err);
@@ -72,7 +76,6 @@ export default function Room({ roomId, userName }) {
         });
       });
 
-      // ✅ CORRIGÉ : ajoute le peer s'il n'existe pas encore + guard device
       socket.on('newProducer', async ({ producerId, peerId, userName: peerName }) => {
         try {
           const device = getDevice();
@@ -84,16 +87,17 @@ export default function Room({ roomId, userName }) {
           setPeers((prev) => {
             const exists = prev.find(p => p.peerId === peerId);
             if (exists) {
-              // Peer déjà dans la liste, on lui assigne le stream
               return prev.map(p => p.peerId === peerId ? { ...p, stream: peerStream } : p);
-            } else {
-              // Peer pas encore dans la liste (newPeer pas encore reçu)
-              return [...prev, { peerId, userName: peerName || 'Inconnu', stream: peerStream }];
             }
+            return [...prev, { peerId, userName: peerName || 'Inconnu', stream: peerStream }];
           });
         } catch (err) {
           console.error('❌ consumeStream error:', err);
         }
+      });
+
+      socket.on('consumerClosed', ({ consumerId }) => {
+        console.log('🔇 Consumer closed:', consumerId);
       });
 
       socket.on('peerLeft', ({ peerId }) => {
@@ -105,7 +109,8 @@ export default function Room({ roomId, userName }) {
     init().catch(console.error);
 
     return () => {
-      if (socketRef.current) socketRef.current.disconnect();
+      resetMedia();
+      socket.disconnect();
     };
   }, [roomId, userName]);
 
@@ -125,6 +130,7 @@ export default function Room({ roomId, userName }) {
 
   const leaveRoom = () => {
     if (localStream) localStream.getTracks().forEach(t => t.stop());
+    resetMedia();
     if (socketRef.current) socketRef.current.disconnect();
     window.location.reload();
   };
