@@ -1,14 +1,13 @@
 const https = require('https');
 const { getOrCreateRoom, createTransport, rooms } = require('../services/mediasoupService');
 
-// Fetch TURN credentials depuis Metered API
 const getTurnCredentials = () => {
   return new Promise((resolve) => {
     const apiKey = process.env.METERED_API_KEY;
     const domain = process.env.METERED_DOMAIN;
 
     if (!apiKey || !domain) {
-      console.warn('⚠️ METERED_API_KEY ou METERED_DOMAIN manquant');
+      console.warn('⚠️ METERED credentials manquants');
       return resolve([]);
     }
 
@@ -17,9 +16,11 @@ const getTurnCredentials = () => {
       res.on('data', chunk => data += chunk);
       res.on('end', () => {
         try {
-          resolve(JSON.parse(data));
+          const credentials = JSON.parse(data);
+          console.log('✅ TURN credentials fetched:', credentials.length, 'servers');
+          resolve(credentials);
         } catch (e) {
-          console.error('❌ TURN credentials parse error:', e.message);
+          console.error('❌ TURN parse error:', e.message);
           resolve([]);
         }
       });
@@ -32,16 +33,17 @@ const getTurnCredentials = () => {
 
 module.exports = (io) => {
   io.on('connection', (socket) => {
-    console.log('Client connected: ' + socket.id);
+    console.log('✅ Client connected:', socket.id);
 
     socket.on('joinRoom', async ({ roomId, userName }, callback) => {
       try {
         const room = await getOrCreateRoom(roomId);
         socket.join(roomId);
         room.peers.set(socket.id, { userName, producers: [], consumers: [] });
-        const rtpCapabilities = room.router.rtpCapabilities;
 
+        const rtpCapabilities = room.router.rtpCapabilities;
         const existingProducers = [];
+
         room.peers.forEach((peer, peerId) => {
           if (peerId !== socket.id) {
             peer.producers.forEach((producer) => {
@@ -57,9 +59,9 @@ module.exports = (io) => {
 
         callback({ rtpCapabilities, existingProducers });
         socket.to(roomId).emit('newPeer', { peerId: socket.id, userName });
-        console.log(`${userName} joined room: ${roomId}`);
+        console.log(`${userName} joined room: ${roomId}, existing producers: ${existingProducers.length}`);
       } catch (err) {
-        console.error('joinRoom error: ' + err.message);
+        console.error('joinRoom error:', err.message);
         callback({ error: err.message });
       }
     });
@@ -75,11 +77,11 @@ module.exports = (io) => {
         }
 
         const iceServers = await getTurnCredentials();
-        console.log(`✅ TURN credentials fetched: ${iceServers.length} servers`);
 
         callback({ params: { ...params, iceServers } });
+        console.log(`✅ Transport ${direction} created for ${socket.id}`);
       } catch (err) {
-        console.error('createTransport error: ' + err.message);
+        console.error('createTransport error:', err.message);
         callback({ error: err.message });
       }
     });
@@ -87,11 +89,11 @@ module.exports = (io) => {
     socket.on('connectTransport', async ({ dtlsParameters, direction }, callback) => {
       try {
         const transport = direction === 'send' ? socket._sendTransport : socket._recvTransport;
-        if (!transport) return callback({ error: 'Transport ' + direction + ' not found' });
+        if (!transport) return callback({ error: `Transport ${direction} not found` });
         await transport.connect({ dtlsParameters });
         callback({ success: true });
       } catch (err) {
-        console.error('connectTransport error: ' + err.message);
+        console.error('connectTransport error:', err.message);
         callback({ error: err.message });
       }
     });
@@ -115,11 +117,15 @@ module.exports = (io) => {
           userName: peer?.userName,
         });
 
-        producer.on('transportclose', () => producer.close());
+        producer.on('transportclose', () => {
+          console.log(`Producer ${producer.id} transport closed`);
+          producer.close();
+        });
 
         callback({ id: producer.id });
+        console.log(`✅ Producer created: ${kind} for ${socket.id}`);
       } catch (err) {
-        console.error('produce error: ' + err.message);
+        console.error('produce error:', err.message);
         callback({ error: err.message });
       }
     });
@@ -131,6 +137,7 @@ module.exports = (io) => {
         if (!socket._recvTransport) return callback({ error: 'Recv transport not found' });
 
         if (!room.router.canConsume({ producerId, rtpCapabilities })) {
+          console.error('❌ Cannot consume producerId:', producerId);
           return callback({ error: 'Cannot consume this producer' });
         }
 
@@ -145,8 +152,13 @@ module.exports = (io) => {
 
         await consumer.resume();
 
-        consumer.on('transportclose', () => consumer.close());
+        consumer.on('transportclose', () => {
+          console.log(`Consumer ${consumer.id} transport closed`);
+          consumer.close();
+        });
+
         consumer.on('producerclose', () => {
+          console.log(`Consumer ${consumer.id} producer closed`);
           consumer.close();
           socket.emit('consumerClosed', { consumerId: consumer.id });
         });
@@ -157,8 +169,10 @@ module.exports = (io) => {
           kind: consumer.kind,
           rtpParameters: consumer.rtpParameters,
         });
+
+        console.log(`✅ Consumer created: ${consumer.kind} for ${socket.id}`);
       } catch (err) {
-        console.error('consume error: ' + err.message);
+        console.error('consume error:', err.message);
         callback({ error: err.message });
       }
     });
@@ -175,13 +189,13 @@ module.exports = (io) => {
         await consumer.resume();
         callback({ success: true });
       } catch (err) {
-        console.error('resumeConsumer error: ' + err.message);
+        console.error('resumeConsumer error:', err.message);
         callback({ error: err.message });
       }
     });
 
     socket.on('disconnect', () => {
-      console.log('Client disconnected: ' + socket.id);
+      console.log('❌ Client disconnected:', socket.id);
       rooms.forEach((room, roomId) => {
         if (room.peers.has(socket.id)) {
           const peer = room.peers.get(socket.id);
@@ -189,6 +203,7 @@ module.exports = (io) => {
           peer.consumers.forEach(c => { try { c.close(); } catch (e) {} });
           room.peers.delete(socket.id);
           socket.to(roomId).emit('peerLeft', { peerId: socket.id });
+          console.log(`Peer ${socket.id} left room ${roomId}`);
         }
       });
     });
