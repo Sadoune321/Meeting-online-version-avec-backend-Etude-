@@ -1,44 +1,11 @@
 const https = require('https');
 const { getOrCreateRoom, createTransport, rooms } = require('../services/mediasoupService');
 
-const getTurnCredentials = () => {
-  return new Promise((resolve) => {
-    const apiKey = process.env.METERED_API_KEY;
-    const domain = process.env.METERED_DOMAIN;
-
-    console.log('🔑 METERED_API_KEY:', apiKey ? 'OK' : 'MANQUANT');
-    console.log('🌐 METERED_DOMAIN:', domain ? domain : 'MANQUANT');
-
-    if (!apiKey || !domain) {
-      console.warn('⚠️ METERED credentials manquants — fallback STUN');
-      return resolve([{ urls: 'stun:stun.l.google.com:19302' }]);
-    }
-
-    const url = `https://${domain}/api/v1/turn/credentials?apiKey=${apiKey}`;
-    console.log('📡 Fetching TURN credentials from:', url);
-
-    https.get(url, (res) => {
-      let data = '';
-      res.on('data', chunk => data += chunk);
-      res.on('end', () => {
-        console.log('📩 TURN raw response:', data);
-        try {
-          const credentials = JSON.parse(data);
-          console.log('✅ TURN credentials fetched:', credentials.length, 'servers');
-          resolve(credentials);
-        } catch (e) {
-          console.error('❌ TURN parse error:', e.message);
-          resolve([{ urls: 'stun:stun.l.google.com:19302' }]);
-        }
-      });
-    }).on('error', (e) => {
-      console.error('❌ TURN fetch error:', e.message);
-      resolve([{ urls: 'stun:stun.l.google.com:19302' }]);
-    });
-  });
-  return [
+const getTurnCredentials = async () => {
+  const defaultIceServers = [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' },
     {
       urls: [
         'turn:openrelay.metered.ca:80',
@@ -49,6 +16,39 @@ const getTurnCredentials = () => {
       credential: 'openrelayproject',
     },
   ];
+
+  const apiKey = process.env.METERED_API_KEY;
+  const domain = process.env.METERED_DOMAIN;
+
+  console.log('🔑 METERED_API_KEY:', apiKey ? 'OK' : 'MANQUANT');
+  console.log('🌐 METERED_DOMAIN:', domain ? domain : 'MANQUANT');
+
+  if (!apiKey || !domain) {
+    console.warn('⚠️ METERED credentials manquants — utilisation STUN/TURN publics');
+    return defaultIceServers;
+  }
+
+  try {
+    const url = `https://${domain}/api/v1/turn/credentials?apiKey=${apiKey}`;
+    console.log('📡 Fetching TURN credentials from:', url);
+
+    const response = await new Promise((resolve, reject) => {
+      https.get(url, (res) => {
+        let data = '';
+        res.on('data', chunk => data += chunk);
+        res.on('end', () => resolve(data));
+        res.on('error', reject);
+      }).on('error', reject);
+    });
+
+    console.log('📩 TURN raw response:', response);
+    const credentials = JSON.parse(response);
+    console.log('✅ TURN credentials fetched:', credentials.length, 'servers');
+    return credentials;
+  } catch (e) {
+    console.error('❌ TURN fetch error:', e.message);
+    return defaultIceServers;
+  }
 };
 
 module.exports = (io) => {
