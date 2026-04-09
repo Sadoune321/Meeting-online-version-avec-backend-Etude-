@@ -19,12 +19,16 @@ export const createSendTransport = async (socket, roomId) => {
       if (error) return reject(new Error(error));
 
       const { iceServers, ...transportParams } = params;
-      console.log('📡 iceServers reçus:', iceServers?.length);
+      console.log('📡 iceServers reçus:', iceServers);
+
+      const validIceServers = Array.isArray(iceServers) && iceServers.length > 0
+        ? iceServers
+        : [{ urls: 'stun:stun.l.google.com:19302' }];
 
       sendTransport = device.createSendTransport({
         ...transportParams,
-        iceServers: iceServers || [],
-        iceTransportPolicy: 'relay', // ← forcer TURN
+        iceServers: validIceServers,
+        iceTransportPolicy: 'all',
       });
 
       sendTransport.on('connect', ({ dtlsParameters }, callback, errback) => {
@@ -43,10 +47,7 @@ export const createSendTransport = async (socket, roomId) => {
 
       sendTransport.on('connectionstatechange', (state) => {
         console.log('📤 sendTransport state:', state);
-        if (state === 'failed') {
-          console.error('❌ sendTransport failed');
-          sendTransport.close();
-        }
+        if (state === 'failed') sendTransport.close();
       });
 
       resolve(sendTransport);
@@ -61,10 +62,14 @@ export const createRecvTransport = async (socket, roomId) => {
 
       const { iceServers, ...transportParams } = params;
 
+      const validIceServers = Array.isArray(iceServers) && iceServers.length > 0
+        ? iceServers
+        : [{ urls: 'stun:stun.l.google.com:19302' }];
+
       recvTransport = device.createRecvTransport({
         ...transportParams,
-        iceServers: iceServers || [],
-        iceTransportPolicy: 'relay', // ← forcer TURN
+        iceServers: validIceServers,
+        iceTransportPolicy: 'all',
       });
 
       recvTransport.on('connect', ({ dtlsParameters }, callback, errback) => {
@@ -76,10 +81,7 @@ export const createRecvTransport = async (socket, roomId) => {
 
       recvTransport.on('connectionstatechange', (state) => {
         console.log('📥 recvTransport state:', state);
-        if (state === 'failed') {
-          console.error('❌ recvTransport failed');
-          recvTransport.close();
-        }
+        if (state === 'failed') recvTransport.close();
       });
 
       resolve(recvTransport);
