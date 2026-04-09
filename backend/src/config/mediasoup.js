@@ -35,6 +35,7 @@ module.exports = {
     enableUdp: false,
     enableTcp: true,
     preferUdp: false,
+    preferTcp: true,
     maxIncomingBitrate: 1500000,
     initialAvailableOutgoingBitrate: 1000000,
   },
