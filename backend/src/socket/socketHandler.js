@@ -96,7 +96,7 @@ module.exports = (io) => {
           socket._recvTransport = transport;
         }
 
-        const iceServers = getTurnCredentials();
+        const iceServers = await getTurnCredentials();
         console.log('iceServers : ', JSON.stringify(iceServers));
 
         callback({ params: { ...params, iceServers } });
