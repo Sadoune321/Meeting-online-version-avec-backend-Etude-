@@ -36,6 +36,19 @@ const getTurnCredentials = () => {
       resolve([{ urls: 'stun:stun.l.google.com:19302' }]);
     });
   });
+  return [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    {
+      urls: [
+        'turn:openrelay.metered.ca:80',
+        'turn:openrelay.metered.ca:443',
+        'turns:openrelay.metered.ca:443',
+      ],
+      username: 'openrelayproject',
+      credential: 'openrelayproject',
+    },
+  ];
 };
 
 module.exports = (io) => {
@@ -83,7 +96,8 @@ module.exports = (io) => {
           socket._recvTransport = transport;
         }
 
-        const iceServers = await getTurnCredentials();
+        const iceServers = getTurnCredentials();
+        console.log('iceServers : ', JSON.stringify(iceServers));
 
         callback({ params: { ...params, iceServers } });
         console.log(`✅ Transport ${direction} created for ${socket.id}`);
