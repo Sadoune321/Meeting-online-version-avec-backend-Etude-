@@ -8,6 +8,7 @@ export default function VideoPlayer({ stream, userName, muted = false }) {
     const video = videoRef.current;
     if (!video || !stream) return;
 
+    video.pause();
     video.srcObject = stream;
 
     const playVideo = async () => {
@@ -16,6 +17,7 @@ export default function VideoPlayer({ stream, userName, muted = false }) {
         setNeedsClick(false);
         console.log('✅ Video playing:', userName);
       } catch (err) {
+        if (err.name === 'AbortError') return;
         console.warn('⚠️ Autoplay blocked:', err.message);
         setNeedsClick(true);
       }
@@ -31,7 +33,7 @@ export default function VideoPlayer({ stream, userName, muted = false }) {
       await video.play();
       setNeedsClick(false);
     } catch (err) {
-      console.error('play error:', err);
+      console.error('❌ play error:', err);
     }
   };
 
@@ -49,7 +51,7 @@ export default function VideoPlayer({ stream, userName, muted = false }) {
           <span style={styles.text}>En attente...</span>
         </div>
       )}
-      {needsClick && (
+      {stream && needsClick && (
         <div style={styles.overlay}>
           <span style={styles.text}>👆 Cliquez pour démarrer</span>
         </div>
