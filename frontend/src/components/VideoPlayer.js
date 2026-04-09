@@ -1,92 +1,52 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect } from 'react';
 
 export default function VideoPlayer({ stream, userName, muted = false }) {
   const videoRef = useRef(null);
-  const [needsClick, setNeedsClick] = useState(false);
 
   useEffect(() => {
     const video = videoRef.current;
-    if (!video) return;
+    if (!video || !stream) return;
 
-    if (!stream) {
-      video.srcObject = null;
-      return;
-    }
-
-    // ✅ Arrêter le stream précédent proprement
-    video.pause();
-    video.srcObject = null;
-
-    // ✅ Assigner le nouveau stream
     video.srcObject = stream;
+    video.muted = muted;
+    video.volume = muted ? 0 : 1;
 
-    const playVideo = async () => {
-      try {
-        await video.play();
-        setNeedsClick(false);
-        console.log('✅ Video playing:', userName);
-      } catch (err) {
-        if (err.name === 'AbortError') return;
-        console.warn('⚠️ Autoplay blocked:', err.message);
-        setNeedsClick(true);
-      }
+    const tryPlay = () => {
+      video.play().catch((err) => {
+        console.warn('⚠️ play blocked:', err.message);
+        // ✅ Débloquer au prochain clic sur la page
+        const resume = () => {
+          video.play().catch(console.warn);
+          console.log('▶️ Resumed by click');
+        };
+        document.addEventListener('click', resume, { once: true });
+        document.addEventListener('touchstart', resume, { once: true });
+      });
     };
 
-    // ✅ Attendre que les métadonnées soient chargées
-    video.onloadedmetadata = () => {
-      playVideo();
-    };
-
-    // ✅ Fallback si onloadedmetadata ne se déclenche pas
-    setTimeout(() => {
-      if (video.readyState >= 2) {
-        playVideo();
-      }
-    }, 500);
-
-  }, [stream, userName]);
-
-  const handleClick = async () => {
-    const video = videoRef.current;
-    if (!video) return;
-    try {
-      await video.play();
-      setNeedsClick(false);
-      console.log('✅ Video started by click:', userName);
-    } catch (err) {
-      console.error('❌ play error:', err);
+    if (video.readyState >= 2) {
+      tryPlay();
+    } else {
+      video.onloadedmetadata = () => tryPlay();
     }
-  };
+
+  }, [stream, muted]);
 
   return (
-    <div style={styles.container} onClick={handleClick}>
-      <video
-        ref={videoRef}
-        autoPlay
-        playsInline
-        muted={muted}
-        style={{
-          ...styles.video,
-          display: stream ? 'block' : 'none',
-        }}
-      />
-
-      {/* Placeholder si pas de stream */}
-      {!stream && (
-        <div style={styles.overlay}>
-          <div style={styles.cameraIcon}>📷</div>
-          <span style={styles.text}>En attente...</span>
+    <div style={styles.container}>
+      {stream ? (
+        <video
+          ref={videoRef}
+          autoPlay
+          playsInline
+          muted={muted}
+          style={styles.video}
+        />
+      ) : (
+        <div style={styles.placeholder}>
+          <span style={styles.placeholderText}>En attente...</span>
         </div>
       )}
-
-      {/* Bouton cliquer pour démarrer */}
-      {stream && needsClick && (
-        <div style={styles.overlay}>
-          <span style={styles.clickText}>👆 Cliquez pour démarrer</span>
-        </div>
-      )}
-
-      {/* Nom du peer */}
       <span style={styles.name}>{userName}</span>
     </div>
   );
@@ -100,38 +60,23 @@ const styles = {
     backgroundColor: '#0f3460',
     width: '320px',
     height: '240px',
-    cursor: 'pointer',
-    flexShrink: 0,
   },
   video: {
     width: '100%',
     height: '100%',
     objectFit: 'cover',
+    display: 'block',
   },
-  overlay: {
-    position: 'absolute',
-    inset: 0,
+  placeholder: {
+    width: '100%',
+    height: '100%',
     display: 'flex',
-    flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(0,0,0,0.3)',
-    gap: '8px',
   },
-  cameraIcon: {
-    fontSize: '32px',
-    opacity: 0.4,
-  },
-  text: {
-    color: 'rgba(255,255,255,0.5)',
-    fontSize: '14px',
-  },
-  clickText: {
+  placeholderText: {
     color: '#fff',
     fontSize: '14px',
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    padding: '8px 16px',
-    borderRadius: '8px',
   },
   name: {
     position: 'absolute',
