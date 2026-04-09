@@ -28,7 +28,7 @@ export const createSendTransport = async (socket, roomId) => {
       sendTransport = device.createSendTransport({
         ...transportParams,
         iceServers: validIceServers,
-        iceTransportPolicy: 'all',
+        iceTransportPolicy: 'relay',
       });
 
       sendTransport.on('connect', ({ dtlsParameters }, callback, errback) => {
