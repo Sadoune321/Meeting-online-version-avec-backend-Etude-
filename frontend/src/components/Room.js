@@ -43,7 +43,6 @@ export default function Room({ roomId, userName }) {
   const hostId  = `${roomId}-host`;
   const guestId = `${roomId}-${userName}`;
 
-  // ─── Attach remote stream (même logique que MeetHub) ──────────────────────
   const attachStream = useCallback((stream) => {
     console.log('attachStream:', stream.getTracks().map(t => `${t.kind}(${t.readyState})`).join(', '));
     const video = remoteVideoRef.current;
@@ -64,7 +63,6 @@ export default function Room({ roomId, userName }) {
     setStatus('Connecté ✓');
   }, []);
 
-  // ─── Wire call (même logique que MeetHub) ─────────────────────────────────
   const wireCall = useCallback((call) => {
     callRef.current = call;
 
@@ -76,6 +74,7 @@ export default function Room({ roomId, userName }) {
       if (state === 'failed') {
         console.error('ICE FAILED');
         setStatus('Connexion échouée');
+        clearInterval(checkPc);
       }
       if (state === 'connected' || state === 'completed') {
         console.log('✅ ICE connected');
@@ -105,7 +104,6 @@ export default function Room({ roomId, userName }) {
     });
   }, [attachStream]);
 
-  // ─── Call host (même logique que MeetHub) ─────────────────────────────────
   const callHost = useCallback((peer) => {
     if (!mountedRef.current || !localStreamRef.current || connectedRef.current) return;
     console.log('Calling host:', hostId);
@@ -128,7 +126,6 @@ export default function Room({ roomId, userName }) {
 
     wireCall(call);
 
-    // Watchdog — retry si pas de stream après 8s
     const wd = setTimeout(() => {
       if (!connectedRef.current && mountedRef.current) {
         console.warn('Watchdog: pas de stream après 8s, retry...');
@@ -147,7 +144,6 @@ export default function Room({ roomId, userName }) {
     });
   }, [hostId, wireCall]);
 
-  // ─── Init ─────────────────────────────────────────────────────────────────
   useEffect(() => {
     mountedRef.current = true;
     connectedRef.current = false;
@@ -159,7 +155,6 @@ export default function Room({ roomId, userName }) {
     socket.on('connect_error', err => console.error('❌ Socket error:', err.message));
 
     const init = async () => {
-      // 1. Caméra + micro
       let stream;
       try {
         stream = await navigator.mediaDevices.getUserMedia({
@@ -175,7 +170,6 @@ export default function Room({ roomId, userName }) {
         return;
       }
 
-      // 2. TURN servers
       setStatus('Chargement TURN...');
       const iceServers = await getTurnServers();
       console.log('ICE servers:', iceServers.length);
@@ -183,11 +177,10 @@ export default function Room({ roomId, userName }) {
       const cfg = {
         config: {
           iceServers,
-          iceTransportPolicy: 'relay',
+          iceTransportPolicy: 'all', // ✅ 'all' au lieu de 'relay'
         },
       };
 
-      // 3. Rejoindre la room via socket
       socket.emit('joinRoom', { roomId, userName }, ({ isHost, error }) => {
         if (error) return console.error('joinRoom error:', error);
 
@@ -214,7 +207,6 @@ export default function Room({ roomId, userName }) {
             setRole('host');
             setStatus('En attente d\'un invité...');
             peerRef.current = peer;
-
             peer.on('call', (incomingCall) => {
               if (!mountedRef.current) return;
               console.log('📞 Incoming call — answering');
@@ -291,7 +283,6 @@ export default function Room({ roomId, userName }) {
       <p style={styles.status}>{status}</p>
 
       <div style={styles.grid}>
-        {/* Vidéo locale */}
         <div style={styles.tile}>
           <video
             ref={localVideoRef}
@@ -305,7 +296,6 @@ export default function Room({ roomId, userName }) {
           </span>
         </div>
 
-        {/* Vidéo distante */}
         <div style={{
           ...styles.tile,
           borderColor: isConnected ? 'rgba(0,210,255,0.3)' : 'rgba(255,255,255,0.08)',
