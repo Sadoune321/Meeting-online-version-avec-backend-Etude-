@@ -29,13 +29,13 @@ module.exports = {
     listenIps: [
       {
         ip: '0.0.0.0',
-        announcedIp: process.env.MEDIASOUP_ANNOUNCED_IP || null,
+        announcedIp: process.env.MEDIASOUP_ANNOUNCED_IP || process.env.RENDER_PUBLIC_IP || '0.0.0.0',
       },
     ],
-    enableUdp: false,
+    enableUdp: true,
     enableTcp: true,
-    preferUdp: false,
-    preferTcp: true,
+    preferUdp: true,
+    preferTcp: false,
     maxIncomingBitrate: 1500000,
     initialAvailableOutgoingBitrate: 1000000,
   },
