@@ -37,7 +37,11 @@ export default function Room({ roomId, userName }) {
   }, []);
 
   const setupCall = useCallback((call, peerName) => {
+    let streamReceived = false;
+
     call.on('stream', (remoteStream) => {
+      if (streamReceived) return;
+      streamReceived = true;
       console.log('✅ Stream received from:', call.peer);
       attachRemoteStream(call.peer, remoteStream, peerName);
       setStatus('Connecté ✓');
@@ -109,7 +113,6 @@ export default function Room({ roomId, userName }) {
           return [...prev, { peerId: remotePeerId, userName: peerName, stream: null }];
         });
 
-        // Appeler le nouveau peer après un délai
         setTimeout(() => {
           const call = callPeer(remotePeerId);
           if (call) setupCall(call, peerName);
