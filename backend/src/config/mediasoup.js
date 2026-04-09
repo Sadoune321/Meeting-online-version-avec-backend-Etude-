@@ -26,20 +26,21 @@ module.exports = {
   },
 
   webRtcTransport: {
-    listenIps: [
-      {
-        ip: process.env.MEDIASOUP_LISTEN_IP || '0.0.0.0',
-        // 🔥 CRUCIAL : Utiliser l'IP publique de Render
-        announcedIp: process.env.MEDIASOUP_ANNOUNCED_IP || '74.220.48.240',
-      },
-    ],
-    // 🔥 ACTIVER UDP (essentiel pour WebRTC)
-    enableUdp: true,
-    enableTcp: true,
-    preferUdp: true,
-    preferTcp: false,
-    initialAvailableOutgoingBitrate: 1_000_000,
-    minimumAvailableOutgoingBitrate: 600_000,
-    maxIncomingBitrate: 1_500_000,
-  },
+  listenIps: [
+    {
+      ip: '0.0.0.0',
+      announcedIp: process.env.MEDIASOUP_ANNOUNCED_IP || '74.220.48.240',
+    },
+  ],
+  // 🔥 FORCER TCP UNIQUEMENT (car Render bloque UDP)
+  enableUdp: false,
+  enableTcp: true,
+  preferUdp: false,
+  preferTcp: true,
+  initialAvailableOutgoingBitrate: 1_000_000,
+  // Configuration TCP spécifique
+  tcpListenAddress: '0.0.0.0',
+  tcpListenPort: parseInt(process.env.MEDIASOUP_MIN_PORT) || 10000,
+},
+  
 };
