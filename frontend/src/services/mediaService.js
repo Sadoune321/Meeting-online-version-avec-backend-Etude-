@@ -17,6 +17,7 @@ export const createSendTransport = async (socket, roomId) => {
   return new Promise((resolve, reject) => {
     socket.emit('createTransport', { roomId, direction: 'send' }, ({ params, error }) => {
       if (error) return reject(new Error(error));
+
       sendTransport = device.createSendTransport(params);
 
       sendTransport.on('connect', ({ dtlsParameters }, callback, errback) => {
@@ -33,6 +34,11 @@ export const createSendTransport = async (socket, roomId) => {
         });
       });
 
+      sendTransport.on('connectionstatechange', (state) => {
+        console.log('sendTransport state:', state);
+        if (state === 'failed') sendTransport.close();
+      });
+
       resolve(sendTransport);
     });
   });
@@ -42,6 +48,7 @@ export const createRecvTransport = async (socket, roomId) => {
   return new Promise((resolve, reject) => {
     socket.emit('createTransport', { roomId, direction: 'recv' }, ({ params, error }) => {
       if (error) return reject(new Error(error));
+
       recvTransport = device.createRecvTransport(params);
 
       recvTransport.on('connect', ({ dtlsParameters }, callback, errback) => {
@@ -49,6 +56,11 @@ export const createRecvTransport = async (socket, roomId) => {
           if (error) return errback(new Error(error));
           callback();
         });
+      });
+
+      recvTransport.on('connectionstatechange', (state) => {
+        console.log('recvTransport state:', state);
+        if (state === 'failed') recvTransport.close();
       });
 
       resolve(recvTransport);
@@ -60,44 +72,37 @@ export const publishStream = async (stream) => {
   const producers = [];
   for (const track of stream.getTracks()) {
     const producer = await sendTransport.produce({ track });
+    console.log('✅ Producer created, kind:', producer.kind);
     producers.push(producer);
   }
   return producers;
 };
 
-// ✅ CORRIGÉ : ajout du resumeConsumer obligatoire
 export const consumeStream = async (socket, roomId, producerId, rtpCapabilities) => {
   if (!recvTransport) {
-    console.log('⚠️ recvTransport null, recréation...');
+    console.warn('⚠️ recvTransport null, recréation...');
     await createRecvTransport(socket, roomId);
   }
 
   return new Promise((resolve, reject) => {
-    console.log('📡 Emit consume:', { roomId, producerId });
-    
     socket.emit('consume', { roomId, producerId, rtpCapabilities }, async (response) => {
-      console.log('📩 consume response:', response); // ← CRITIQUE : voir ce que le serveur renvoie
-      
+      console.log('📩 consume response:', response);
       const { id, kind, rtpParameters, error } = response;
       if (error) return reject(new Error(error));
-      
-      try {
-        console.log('🔧 Creating consumer, kind:', kind);
-        const consumer = await recvTransport.consume({ id, producerId, kind, rtpParameters });
-        console.log('✅ Consumer created:', consumer.id);
 
-        await new Promise((res) => {
-          socket.emit('resumeConsumer', { consumerId: id }, (resumeResponse) => {
-            console.log('▶️ resumeConsumer response:', resumeResponse); // ← voir si ça marche
-            res();
-          });
+      try {
+        const consumer = await recvTransport.consume({ id, producerId, kind, rtpParameters });
+        console.log('✅ Consumer created, kind:', kind);
+
+        // Resume côté frontend aussi (double sécurité)
+        socket.emit('resumeConsumer', { consumerId: id }, (res) => {
+          console.log('▶️ resumeConsumer:', res);
         });
 
         const stream = new MediaStream([consumer.track]);
-        console.log('✅ Stream ready, tracks:', stream.getTracks().length);
         resolve(stream);
       } catch (err) {
-        console.error('❌ consumer.consume() error:', err);
+        console.error('❌ consumer error:', err);
         reject(err);
       }
     });
