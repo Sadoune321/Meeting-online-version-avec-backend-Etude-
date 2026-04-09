@@ -1,136 +1,89 @@
-import * as mediasoupClient from 'mediasoup-client';
+import Peer from 'peerjs';
 
-let device = null;
-let sendTransport = null;
-let recvTransport = null;
+let peer = null;
+let localStream = null;
+let currentCall = null;
 
-export const loadDevice = async (rtpCapabilities) => {
-  device = new mediasoupClient.Device();
-  await device.load({ routerRtpCapabilities: rtpCapabilities });
-  console.log('✅ Device loaded successfully');
-  return device;
+const getTurnServers = async (apiKey, domain) => {
+  try {
+    const res = await fetch(
+      `https://${domain}.metered.live/api/v1/turn/credentials?apiKey=${apiKey}`
+    );
+    const data = await res.json();
+    if (Array.isArray(data) && data.length > 0) {
+      console.log('✅ TURN servers fetched:', data.length);
+      return data;
+    }
+  } catch (e) {
+    console.warn('⚠️ TURN fetch failed:', e.message);
+  }
+  return [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    {
+      urls: [
+        'turn:openrelay.metered.ca:80',
+        'turn:openrelay.metered.ca:443',
+        'turn:openrelay.metered.ca:443?transport=tcp',
+      ],
+      username: 'openrelayproject',
+      credential: 'openrelayproject',
+    },
+  ];
 };
 
-export const getDevice = () => device;
+export const initMedia = async () => {
+  localStream = await navigator.mediaDevices.getUserMedia({
+    video: true,
+    audio: true,
+  });
+  return localStream;
+};
 
-export const createSendTransport = async (socket, roomId) => {
+export const getLocalStream = () => localStream;
+
+export const createPeer = async (peerId) => {
+  const apiKey = process.env.REACT_APP_METERED_API_KEY;
+  const domain = process.env.REACT_APP_METERED_SUBDOMAIN;
+  const iceServers = await getTurnServers(apiKey, domain);
+
   return new Promise((resolve, reject) => {
-    socket.emit('createTransport', { roomId, direction: 'send' }, ({ params, error }) => {
-      if (error) return reject(new Error(error));
-
-      const { iceServers, ...transportParams } = params;
-      console.log('📡 iceServers reçus:', iceServers);
-
-      const validIceServers = Array.isArray(iceServers) && iceServers.length > 0
-        ? iceServers
-        : [{ urls: 'stun:stun.l.google.com:19302' }];
-
-      sendTransport = device.createSendTransport({
-        ...transportParams,
-        iceServers: validIceServers,
+    peer = new Peer(peerId, {
+      config: {
+        iceServers,
         iceTransportPolicy: 'relay',
-      });
+      },
+    });
 
-      sendTransport.on('connect', ({ dtlsParameters }, callback, errback) => {
-        socket.emit('connectTransport', { dtlsParameters, direction: 'send' }, ({ error }) => {
-          if (error) return errback(new Error(error));
-          callback();
-        });
-      });
+    peer.on('open', (id) => {
+      console.log('✅ Peer ready:', id);
+      resolve({ peer, id });
+    });
 
-      sendTransport.on('produce', ({ kind, rtpParameters }, callback, errback) => {
-        socket.emit('produce', { roomId, kind, rtpParameters }, ({ id, error }) => {
-          if (error) return errback(new Error(error));
-          callback({ id });
-        });
-      });
-
-      sendTransport.on('connectionstatechange', (state) => {
-        console.log('📤 sendTransport state:', state);
-        if (state === 'failed') sendTransport.close();
-      });
-
-      resolve(sendTransport);
+    peer.on('error', (err) => {
+      console.error('❌ Peer error:', err.type);
+      reject(err);
     });
   });
 };
 
-export const createRecvTransport = async (socket, roomId) => {
-  return new Promise((resolve, reject) => {
-    socket.emit('createTransport', { roomId, direction: 'recv' }, ({ params, error }) => {
-      if (error) return reject(new Error(error));
-
-      const { iceServers, ...transportParams } = params;
-
-      const validIceServers = Array.isArray(iceServers) && iceServers.length > 0
-        ? iceServers
-        : [{ urls: 'stun:stun.l.google.com:19302' }];
-
-      recvTransport = device.createRecvTransport({
-        ...transportParams,
-        iceServers: validIceServers,
-        iceTransportPolicy: 'all',
-      });
-
-      recvTransport.on('connect', ({ dtlsParameters }, callback, errback) => {
-        socket.emit('connectTransport', { dtlsParameters, direction: 'recv' }, ({ error }) => {
-          if (error) return errback(new Error(error));
-          callback();
-        });
-      });
-
-      recvTransport.on('connectionstatechange', (state) => {
-        console.log('📥 recvTransport state:', state);
-        if (state === 'failed') recvTransport.close();
-      });
-
-      resolve(recvTransport);
-    });
-  });
+export const callPeer = (remotePeerId) => {
+  if (!peer || !localStream) return null;
+  currentCall = peer.call(remotePeerId, localStream);
+  return currentCall;
 };
 
-export const publishStream = async (stream) => {
-  const producers = [];
-  for (const track of stream.getTracks()) {
-    const producer = await sendTransport.produce({ track });
-    console.log('✅ Producer created, kind:', producer.kind);
-    producers.push(producer);
-  }
-  return producers;
-};
-
-export const consumeStream = async (socket, roomId, producerId, rtpCapabilities) => {
-  if (!recvTransport) {
-    console.warn('⚠️ recvTransport null, recréation...');
-    await createRecvTransport(socket, roomId);
-  }
-
-  return new Promise((resolve, reject) => {
-    socket.emit('consume', { roomId, producerId, rtpCapabilities }, async (response) => {
-      console.log('📩 consume response:', response);
-      const { id, kind, rtpParameters, error } = response;
-      if (error) return reject(new Error(error));
-
-      try {
-        const consumer = await recvTransport.consume({ id, producerId, kind, rtpParameters });
-        console.log('✅ Consumer created, kind:', kind);
-
-        socket.emit('resumeConsumer', { consumerId: id }, (res) => {
-          console.log('▶️ resumeConsumer:', res);
-        });
-
-        const stream = new MediaStream([consumer.track]);
-        resolve(stream);
-      } catch (err) {
-        console.error('❌ consumer error:', err);
-        reject(err);
-      }
-    });
-  });
+export const answerCall = (call) => {
+  if (!localStream) return;
+  call.answer(localStream);
+  currentCall = call;
 };
 
 export const resetMedia = () => {
-  device = null;
-  sendTransport = null;
-  recvTransport = null;
+  localStream?.getTracks().forEach(t => t.stop());
+  try { currentCall?.close(); } catch (_) {}
+  try { peer?.destroy(); } catch (_) {}
+  peer = null;
+  localStream = null;
+  currentCall = null;
 };
