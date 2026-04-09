@@ -22,6 +22,7 @@ export default function Room({ roomId, userName }) {
   const [videoOff, setVideoOff] = useState(false);
   const [status, setStatus] = useState('Connexion...');
   const socketRef = useRef(null);
+  const calledPeers = useRef(new Set());
 
   const attachRemoteStream = useCallback((remotePeerId, stream, peerName) => {
     console.log('🎥 Attaching stream from:', remotePeerId);
@@ -32,7 +33,11 @@ export default function Room({ roomId, userName }) {
           p.peerId === remotePeerId ? { ...p, stream } : p
         );
       }
-      return [...prev, { peerId: remotePeerId, userName: peerName || remotePeerId, stream }];
+      return [...prev, {
+        peerId: remotePeerId,
+        userName: peerName || remotePeerId,
+        stream,
+      }];
     });
   }, []);
 
@@ -49,6 +54,7 @@ export default function Room({ roomId, userName }) {
 
     call.on('close', () => {
       console.log('📵 Call closed:', call.peer);
+      calledPeers.current.delete(call.peer);
       setPeers(prev => prev.filter(p => p.peerId !== call.peer));
     });
 
@@ -62,7 +68,9 @@ export default function Room({ roomId, userName }) {
     socketRef.current = socket;
 
     socket.on('connect', () => console.log('✅ Socket connected:', socket.id));
-    socket.on('connect_error', err => console.error('❌ Socket error:', err.message));
+    socket.on('connect_error', err =>
+      console.error('❌ Socket error:', err.message)
+    );
 
     const init = async () => {
       // 1. Caméra + micro
@@ -71,12 +79,21 @@ export default function Room({ roomId, userName }) {
       console.log('📷 Local stream obtained');
 
       // 2. Rejoindre la room
-      socket.emit('joinRoom', { roomId, userName }, async ({ existingPeers, isHost, error }) => {
+      socket.emit('joinRoom', { roomId, userName }, async ({
+        existingPeers,
+        isHost,
+        error,
+      }) => {
         if (error) return console.error('❌ joinRoom error:', error);
-        console.log(`👤 Role: ${isHost ? 'HOST' : 'GUEST'}, existing peers: ${existingPeers?.length}`);
+        console.log(
+          `👤 Role: ${isHost ? 'HOST' : 'GUEST'}, existing: ${existingPeers?.length}`
+        );
 
         // 3. Créer le peer PeerJS
-        const peerId = isHost ? `${roomId}-host` : `${roomId}-${userName}`;
+        const peerId = isHost
+          ? `${roomId}-host`
+          : `${roomId}-${userName}`;
+
         try {
           const { peer } = await createPeer(peerId);
 
@@ -87,11 +104,15 @@ export default function Room({ roomId, userName }) {
             setupCall(incomingCall, incomingCall.peer);
           });
 
-          setStatus(isHost ? 'En attente d\'un invité...' : 'Connexion à l\'hôte...');
+          setStatus(
+            isHost ? 'En attente d\'un invité...' : 'Connexion à l\'hôte...'
+          );
 
           // 5. Appeler les peers existants
           if (existingPeers?.length > 0) {
             for (const { peerId: remotePeerId, userName: peerName } of existingPeers) {
+              if (calledPeers.current.has(remotePeerId)) continue;
+              calledPeers.current.add(remotePeerId);
               console.log('📞 Calling existing peer:', remotePeerId);
               setTimeout(() => {
                 const call = callPeer(remotePeerId);
@@ -108,10 +129,18 @@ export default function Room({ roomId, userName }) {
       // 6. Nouveau peer rejoint
       socket.on('newPeer', ({ peerId: remotePeerId, userName: peerName }) => {
         console.log('👤 New peer joined:', peerName, remotePeerId);
+
         setPeers(prev => {
           if (prev.find(p => p.peerId === remotePeerId)) return prev;
-          return [...prev, { peerId: remotePeerId, userName: peerName, stream: null }];
+          return [...prev, {
+            peerId: remotePeerId,
+            userName: peerName,
+            stream: null,
+          }];
         });
+
+        if (calledPeers.current.has(remotePeerId)) return;
+        calledPeers.current.add(remotePeerId);
 
         setTimeout(() => {
           const call = callPeer(remotePeerId);
@@ -122,6 +151,7 @@ export default function Room({ roomId, userName }) {
       socket.on('peerLeft', ({ peerId: remotePeerId }) => {
         console.log('👋 Peer left:', remotePeerId);
         closeCall(remotePeerId);
+        calledPeers.current.delete(remotePeerId);
         setPeers(prev => prev.filter(p => p.peerId !== remotePeerId));
       });
     };
