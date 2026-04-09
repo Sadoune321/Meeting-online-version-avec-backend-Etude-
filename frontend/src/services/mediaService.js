@@ -7,7 +7,7 @@ let recvTransport = null;
 export const loadDevice = async (rtpCapabilities) => {
   device = new mediasoupClient.Device();
   await device.load({ routerRtpCapabilities: rtpCapabilities });
-  console.log('Device loaded successfully');
+  console.log('✅ Device loaded successfully');
   return device;
 };
 
@@ -18,7 +18,14 @@ export const createSendTransport = async (socket, roomId) => {
     socket.emit('createTransport', { roomId, direction: 'send' }, ({ params, error }) => {
       if (error) return reject(new Error(error));
 
-      sendTransport = device.createSendTransport(params);
+      const { iceServers, ...transportParams } = params;
+      console.log('📡 iceServers reçus:', iceServers?.length);
+
+      sendTransport = device.createSendTransport({
+        ...transportParams,
+        iceServers: iceServers || [],
+        iceTransportPolicy: 'relay', // ← forcer TURN
+      });
 
       sendTransport.on('connect', ({ dtlsParameters }, callback, errback) => {
         socket.emit('connectTransport', { dtlsParameters, direction: 'send' }, ({ error }) => {
@@ -35,8 +42,11 @@ export const createSendTransport = async (socket, roomId) => {
       });
 
       sendTransport.on('connectionstatechange', (state) => {
-        console.log('sendTransport state:', state);
-        if (state === 'failed') sendTransport.close();
+        console.log('📤 sendTransport state:', state);
+        if (state === 'failed') {
+          console.error('❌ sendTransport failed');
+          sendTransport.close();
+        }
       });
 
       resolve(sendTransport);
@@ -49,7 +59,13 @@ export const createRecvTransport = async (socket, roomId) => {
     socket.emit('createTransport', { roomId, direction: 'recv' }, ({ params, error }) => {
       if (error) return reject(new Error(error));
 
-      recvTransport = device.createRecvTransport(params);
+      const { iceServers, ...transportParams } = params;
+
+      recvTransport = device.createRecvTransport({
+        ...transportParams,
+        iceServers: iceServers || [],
+        iceTransportPolicy: 'relay', // ← forcer TURN
+      });
 
       recvTransport.on('connect', ({ dtlsParameters }, callback, errback) => {
         socket.emit('connectTransport', { dtlsParameters, direction: 'recv' }, ({ error }) => {
@@ -59,8 +75,11 @@ export const createRecvTransport = async (socket, roomId) => {
       });
 
       recvTransport.on('connectionstatechange', (state) => {
-        console.log('recvTransport state:', state);
-        if (state === 'failed') recvTransport.close();
+        console.log('📥 recvTransport state:', state);
+        if (state === 'failed') {
+          console.error('❌ recvTransport failed');
+          recvTransport.close();
+        }
       });
 
       resolve(recvTransport);
@@ -94,7 +113,6 @@ export const consumeStream = async (socket, roomId, producerId, rtpCapabilities)
         const consumer = await recvTransport.consume({ id, producerId, kind, rtpParameters });
         console.log('✅ Consumer created, kind:', kind);
 
-        // Resume côté frontend aussi (double sécurité)
         socket.emit('resumeConsumer', { consumerId: id }, (res) => {
           console.log('▶️ resumeConsumer:', res);
         });
