@@ -6,27 +6,34 @@ const getTurnCredentials = () => {
     const apiKey = process.env.METERED_API_KEY;
     const domain = process.env.METERED_DOMAIN;
 
+    console.log('🔑 METERED_API_KEY:', apiKey ? 'OK' : 'MANQUANT');
+    console.log('🌐 METERED_DOMAIN:', domain ? domain : 'MANQUANT');
+
     if (!apiKey || !domain) {
-      console.warn('⚠️ METERED credentials manquants');
-      return resolve([]);
+      console.warn('⚠️ METERED credentials manquants — fallback STUN');
+      return resolve([{ urls: 'stun:stun.l.google.com:19302' }]);
     }
 
-    https.get(`https://${domain}/api/v1/turn/credentials?apiKey=${apiKey}`, (res) => {
+    const url = `https://${domain}/api/v1/turn/credentials?apiKey=${apiKey}`;
+    console.log('📡 Fetching TURN credentials from:', url);
+
+    https.get(url, (res) => {
       let data = '';
       res.on('data', chunk => data += chunk);
       res.on('end', () => {
+        console.log('📩 TURN raw response:', data);
         try {
           const credentials = JSON.parse(data);
           console.log('✅ TURN credentials fetched:', credentials.length, 'servers');
           resolve(credentials);
         } catch (e) {
           console.error('❌ TURN parse error:', e.message);
-          resolve([]);
+          resolve([{ urls: 'stun:stun.l.google.com:19302' }]);
         }
       });
     }).on('error', (e) => {
       console.error('❌ TURN fetch error:', e.message);
-      resolve([]);
+      resolve([{ urls: 'stun:stun.l.google.com:19302' }]);
     });
   });
 };
