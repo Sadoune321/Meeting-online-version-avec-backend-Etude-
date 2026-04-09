@@ -4,7 +4,7 @@ module.exports = {
   worker: {
     rtcMinPort: parseInt(process.env.MEDIASOUP_MIN_PORT) || 10000,
     rtcMaxPort: parseInt(process.env.MEDIASOUP_MAX_PORT) || 10100,
-    logLevel: 'warn',
+    logLevel: 'debug', // Mettre en debug pour voir les problèmes
     logTags: ['info', 'ice', 'dtls', 'rtp', 'srtp', 'rtcp'],
   },
 
@@ -28,15 +28,18 @@ module.exports = {
   webRtcTransport: {
     listenIps: [
       {
-        ip: '0.0.0.0',
-        announcedIp: process.env.MEDIASOUP_ANNOUNCED_IP || process.env.RENDER_PUBLIC_IP || '0.0.0.0',
+        ip: process.env.MEDIASOUP_LISTEN_IP || '0.0.0.0',
+        // 🔥 CRUCIAL : Utiliser l'IP publique de Render
+        announcedIp: process.env.MEDIASOUP_ANNOUNCED_IP || '74.220.48.240',
       },
     ],
+    // 🔥 ACTIVER UDP (essentiel pour WebRTC)
     enableUdp: true,
     enableTcp: true,
     preferUdp: true,
     preferTcp: false,
-    maxIncomingBitrate: 1500000,
-    initialAvailableOutgoingBitrate: 1000000,
+    initialAvailableOutgoingBitrate: 1_000_000,
+    minimumAvailableOutgoingBitrate: 600_000,
+    maxIncomingBitrate: 1_500_000,
   },
 };
