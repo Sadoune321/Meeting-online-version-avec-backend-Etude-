@@ -20,7 +20,7 @@ const getOrCreateRoom = async (roomId) => {
   if (!rooms.has(roomId)) {
     const router = await worker.createRouter({ mediaCodecs: config.router.mediaCodecs });
     rooms.set(roomId, { router, peers: new Map() });
-    console.log(Room created: ${roomId});
+    console.log(`Room created: ${roomId}`);
   }
   return rooms.get(roomId);
 };
@@ -31,13 +31,13 @@ const createTransport = async (roomId) => {
 
   transport.on('dtlsstatechange', (dtlsState) => {
     if (dtlsState === 'closed') {
-      console.log(Transport ${transport.id} DTLS closed);
+      console.log(`Transport ${transport.id} DTLS closed`);
       transport.close();
     }
   });
 
   transport.on('close', () => {
-    console.log(Transport ${transport.id} closed);
+    console.log(`Transport ${transport.id} closed`);
   });
 
   return {
