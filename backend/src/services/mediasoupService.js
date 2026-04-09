@@ -12,7 +12,7 @@ const createWorker = async () => {
     process.exit(1);
   });
 
-  console.log('Mediasoup worker created');
+  console.log('✅ Mediasoup worker created');
   return worker;
 };
 
