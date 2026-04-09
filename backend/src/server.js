@@ -46,6 +46,13 @@ const keepAlive = () => {
   }, 10 * 60 * 1000);
 };
 
+const https = require('https');
+https.get('https://api.ipify.org', (res) => {
+  let ip = '';
+  res.on('data', chunk => ip += chunk);
+  res.on('end', () => console.log('🌐 SERVER PUBLIC IP:', ip));
+});
+
 const start = async () => {
   try {
     await sequelize.sync({ force: false });
