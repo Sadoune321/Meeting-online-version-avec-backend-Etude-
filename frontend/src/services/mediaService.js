@@ -2,12 +2,15 @@ import Peer from 'peerjs';
 
 let peer = null;
 let localStream = null;
-let currentCall = null;
+let currentCalls = {};
 
-const getTurnServers = async (apiKey, domain) => {
+const getTurnServers = async () => {
   try {
+    const apiKey = '6eb88ccf21906700de0bb66a4ca35a8d1401';
+    const domain = 'metting-online.metered.live';
+
     const res = await fetch(
-      `https://${domain}.metered.live/api/v1/turn/credentials?apiKey=${apiKey}`
+      `https://${domain}/api/v1/turn/credentials?apiKey=${apiKey}`
     );
     const data = await res.json();
     if (Array.isArray(data) && data.length > 0) {
@@ -43,9 +46,8 @@ export const initMedia = async () => {
 export const getLocalStream = () => localStream;
 
 export const createPeer = async (peerId) => {
-  const apiKey = process.env.REACT_APP_METERED_API_KEY;
-  const domain = process.env.REACT_APP_METERED_SUBDOMAIN;
-  const iceServers = await getTurnServers(apiKey, domain);
+  const iceServers = await getTurnServers();
+  console.log('📡 ICE servers:', iceServers.length);
 
   return new Promise((resolve, reject) => {
     peer = new Peer(peerId, {
@@ -61,29 +63,58 @@ export const createPeer = async (peerId) => {
     });
 
     peer.on('error', (err) => {
-      console.error('❌ Peer error:', err.type);
+      console.error('❌ Peer error:', err.type, err.message);
       reject(err);
+    });
+
+    peer.on('disconnected', () => {
+      console.warn('⚠️ Peer disconnected, reconnecting...');
+      try { peer.reconnect(); } catch (_) {}
     });
   });
 };
 
 export const callPeer = (remotePeerId) => {
-  if (!peer || !localStream) return null;
-  currentCall = peer.call(remotePeerId, localStream);
-  return currentCall;
+  if (!peer || !localStream) {
+    console.error('❌ callPeer: peer ou localStream null');
+    return null;
+  }
+  console.log('📞 Calling peer:', remotePeerId);
+  const call = peer.call(remotePeerId, localStream);
+  if (call) currentCalls[remotePeerId] = call;
+  return call;
 };
 
 export const answerCall = (call) => {
-  if (!localStream) return;
+  if (!localStream) {
+    console.error('❌ answerCall: localStream null');
+    return;
+  }
+  console.log('📞 Answering call from:', call.peer);
   call.answer(localStream);
-  currentCall = call;
+  currentCalls[call.peer] = call;
+};
+
+export const closeCall = (remotePeerId) => {
+  try {
+    if (currentCalls[remotePeerId]) {
+      currentCalls[remotePeerId].close();
+      delete currentCalls[remotePeerId];
+    }
+  } catch (_) {}
 };
 
 export const resetMedia = () => {
-  localStream?.getTracks().forEach(t => t.stop());
-  try { currentCall?.close(); } catch (_) {}
-  try { peer?.destroy(); } catch (_) {}
+  try {
+    localStream?.getTracks().forEach(t => t.stop());
+  } catch (_) {}
+  try {
+    Object.values(currentCalls).forEach(c => c.close());
+  } catch (_) {}
+  try {
+    peer?.destroy();
+  } catch (_) {}
   peer = null;
   localStream = null;
-  currentCall = null;
+  currentCalls = {};
 };
