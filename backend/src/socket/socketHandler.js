@@ -1,4 +1,34 @@
+const https = require('https');
 const { getOrCreateRoom, createTransport, rooms } = require('../services/mediasoupService');
+
+// Fetch TURN credentials depuis Metered API
+const getTurnCredentials = () => {
+  return new Promise((resolve) => {
+    const apiKey = process.env.METERED_API_KEY;
+    const domain = process.env.METERED_DOMAIN;
+
+    if (!apiKey || !domain) {
+      console.warn('⚠️ METERED_API_KEY ou METERED_DOMAIN manquant');
+      return resolve([]);
+    }
+
+    https.get(`https://${domain}/api/v1/turn/credentials?apiKey=${apiKey}`, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        try {
+          resolve(JSON.parse(data));
+        } catch (e) {
+          console.error('❌ TURN credentials parse error:', e.message);
+          resolve([]);
+        }
+      });
+    }).on('error', (e) => {
+      console.error('❌ TURN fetch error:', e.message);
+      resolve([]);
+    });
+  });
+};
 
 module.exports = (io) => {
   io.on('connection', (socket) => {
@@ -27,7 +57,7 @@ module.exports = (io) => {
 
         callback({ rtpCapabilities, existingProducers });
         socket.to(roomId).emit('newPeer', { peerId: socket.id, userName });
-        console.log(`${userName} joined room: ${roomId}, existing producers: ${existingProducers.length}`);
+        console.log(`${userName} joined room: ${roomId}`);
       } catch (err) {
         console.error('joinRoom error: ' + err.message);
         callback({ error: err.message });
@@ -37,12 +67,17 @@ module.exports = (io) => {
     socket.on('createTransport', async ({ roomId, direction }, callback) => {
       try {
         const { transport, params } = await createTransport(roomId);
+
         if (direction === 'send') {
           socket._sendTransport = transport;
         } else {
           socket._recvTransport = transport;
         }
-        callback({ params });
+
+        const iceServers = await getTurnCredentials();
+        console.log(`✅ TURN credentials fetched: ${iceServers.length} servers`);
+
+        callback({ params: { ...params, iceServers } });
       } catch (err) {
         console.error('createTransport error: ' + err.message);
         callback({ error: err.message });
@@ -73,7 +108,6 @@ module.exports = (io) => {
         const peer = room.peers.get(socket.id);
         if (peer) peer.producers.push(producer);
 
-        // ✅ userName inclus pour l'affichage côté frontend
         socket.to(roomId).emit('newProducer', {
           producerId: producer.id,
           peerId: socket.id,
@@ -81,10 +115,7 @@ module.exports = (io) => {
           userName: peer?.userName,
         });
 
-        producer.on('transportclose', () => {
-          console.log(`Producer ${producer.id} transport closed`);
-          producer.close();
-        });
+        producer.on('transportclose', () => producer.close());
 
         callback({ id: producer.id });
       } catch (err) {
@@ -100,31 +131,22 @@ module.exports = (io) => {
         if (!socket._recvTransport) return callback({ error: 'Recv transport not found' });
 
         if (!room.router.canConsume({ producerId, rtpCapabilities })) {
-          console.error('Cannot consume producerId:', producerId);
           return callback({ error: 'Cannot consume this producer' });
         }
 
-        // ✅ paused: true obligatoire, on resume explicitement après
         const consumer = await socket._recvTransport.consume({
           producerId,
           rtpCapabilities,
           paused: true,
         });
 
-        // ✅ CRITIQUE : sauvegarder le consumer sinon garbage collected → peer crash
         const peer = room.peers.get(socket.id);
         if (peer) peer.consumers.push(consumer);
 
-        // ✅ Resume immédiat
         await consumer.resume();
 
-        consumer.on('transportclose', () => {
-          console.log(`Consumer ${consumer.id} transport closed`);
-          consumer.close();
-        });
-
+        consumer.on('transportclose', () => consumer.close());
         consumer.on('producerclose', () => {
-          console.log(`Consumer ${consumer.id} producer closed`);
           consumer.close();
           socket.emit('consumerClosed', { consumerId: consumer.id });
         });
@@ -141,16 +163,13 @@ module.exports = (io) => {
       }
     });
 
-    // ✅ Handler resumeConsumer pour le frontend
     socket.on('resumeConsumer', async ({ consumerId }, callback) => {
       try {
         const room = [...rooms.values()].find(r => r.peers.has(socket.id));
         if (!room) return callback({ error: 'Room not found' });
 
         const peer = room.peers.get(socket.id);
-        if (!peer) return callback({ error: 'Peer not found' });
-
-        const consumer = peer.consumers.find(c => c.id === consumerId);
+        const consumer = peer?.consumers.find(c => c.id === consumerId);
         if (!consumer) return callback({ error: 'Consumer not found' });
 
         await consumer.resume();
@@ -166,19 +185,10 @@ module.exports = (io) => {
       rooms.forEach((room, roomId) => {
         if (room.peers.has(socket.id)) {
           const peer = room.peers.get(socket.id);
-
-          // ✅ Fermer tous les producers proprement
-          peer.producers.forEach(producer => {
-            try { producer.close(); } catch (e) {}
-          });
-
-          peer.consumers.forEach(consumer => {
-            try { consumer.close(); } catch (e) {}
-          });
-
+          peer.producers.forEach(p => { try { p.close(); } catch (e) {} });
+          peer.consumers.forEach(c => { try { c.close(); } catch (e) {} });
           room.peers.delete(socket.id);
           socket.to(roomId).emit('peerLeft', { peerId: socket.id });
-          console.log(`Peer ${socket.id} left room ${roomId}`);
         }
       });
     });
