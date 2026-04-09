@@ -36,13 +36,8 @@ export default function Room({ roomId, userName }) {
         if (error) return console.error('❌ joinRoom error:', error);
 
         await loadDevice(rtpCapabilities);
-        console.log('✅ Device loaded');
-
         await createSendTransport(socket, roomId);
-        console.log('✅ Send transport created');
-
         await createRecvTransport(socket, roomId);
-        console.log('✅ Recv transport created');
 
         if (stream) {
           await publishStream(stream);
@@ -60,7 +55,6 @@ export default function Room({ roomId, userName }) {
                 }
                 return [...prev, { peerId, userName: peerName, stream: peerStream }];
               });
-              console.log('✅ Existing producer consumed:', peerId);
             } catch (err) {
               console.error('❌ consume existing error:', err);
             }
