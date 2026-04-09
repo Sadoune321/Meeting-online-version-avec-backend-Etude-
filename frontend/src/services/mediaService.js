@@ -68,27 +68,36 @@ export const publishStream = async (stream) => {
 // ✅ CORRIGÉ : ajout du resumeConsumer obligatoire
 export const consumeStream = async (socket, roomId, producerId, rtpCapabilities) => {
   if (!recvTransport) {
+    console.log('⚠️ recvTransport null, recréation...');
     await createRecvTransport(socket, roomId);
   }
 
   return new Promise((resolve, reject) => {
-    socket.emit('consume', { roomId, producerId, rtpCapabilities }, async ({ id, kind, rtpParameters, error }) => {
+    console.log('📡 Emit consume:', { roomId, producerId });
+    
+    socket.emit('consume', { roomId, producerId, rtpCapabilities }, async (response) => {
+      console.log('📩 consume response:', response); // ← CRITIQUE : voir ce que le serveur renvoie
+      
+      const { id, kind, rtpParameters, error } = response;
       if (error) return reject(new Error(error));
+      
       try {
+        console.log('🔧 Creating consumer, kind:', kind);
         const consumer = await recvTransport.consume({ id, producerId, kind, rtpParameters });
+        console.log('✅ Consumer created:', consumer.id);
 
-        // ✅ CRITIQUE — mediasoup met le consumer en pause par défaut
         await new Promise((res) => {
-          socket.emit('resumeConsumer', { consumerId: id }, ({ error }) => {
-            if (error) console.error('❌ resumeConsumer error:', error);
+          socket.emit('resumeConsumer', { consumerId: id }, (resumeResponse) => {
+            console.log('▶️ resumeConsumer response:', resumeResponse); // ← voir si ça marche
             res();
           });
         });
 
         const stream = new MediaStream([consumer.track]);
-        console.log('✅ Consumer ready, kind:', kind);
+        console.log('✅ Stream ready, tracks:', stream.getTracks().length);
         resolve(stream);
       } catch (err) {
+        console.error('❌ consumer.consume() error:', err);
         reject(err);
       }
     });
