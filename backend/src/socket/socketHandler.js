@@ -105,31 +105,42 @@ module.exports = (io) => {
       }
     });
 
-    socket.on('connectTransport', async ({ dtlsParameters, direction }, callback) => {
-      try {
-        const transport = direction === 'send' ? socket._sendTransport : socket._recvTransport;
-        if (!transport) return callback({ error: `Transport ${direction} not found` });
-        
-        console.log(`🔌 Connecting ${direction} transport ${transport.id}`);
-        await transport.connect({ dtlsParameters });
-        
-        // Écouter les événements de connexion
-        transport.on('connectionstatechange', (state) => {
-          console.log(`🔗 ${direction} transport connection state: ${state}`);
-          if (state === 'failed') {
-            console.error(`❌ ${direction} transport failed for ${socket.id}`);
-          } else if (state === 'connected') {
-            console.log(`✅ ${direction} transport connected for ${socket.id}`);
-          }
-        });
-        
-        callback({ success: true });
-      } catch (err) {
-        console.error('connectTransport error:', err.message);
-        callback({ error: err.message });
-      }
-    });
-
+   socket.on('connectTransport', async ({ dtlsParameters, direction }, callback) => {
+    try {
+      const transport = direction === 'send' ? socket._sendTransport : socket._recvTransport;
+      if (!transport) return callback({ error: `Transport ${direction} not found` });
+    
+      console.log(`🔌 Connecting ${direction} transport ${transport.id}`);
+    
+      // Ajouter des écouteurs d'événements détaillés
+      transport.on('icegatheringstatechange', (state) => {
+        console.log(`❄️ ICE gathering state (${direction}): ${state}`);
+      });
+    
+      transport.on('iceselectedtuplechange', (tuple) => {
+        console.log(`🎯 ICE selected tuple (${direction}):`, tuple);
+      });
+    
+      transport.on('connectionstatechange', (state) => {
+        console.log(`🔗 Connection state (${direction}): ${state}`);
+        if (state === 'failed') {
+          console.error(`❌ ${direction} transport failed for ${socket.id}`);
+          // Log les détails ICE pour debug
+          console.log('Transport details:', {
+            id: transport.id,
+            iceParameters: transport.iceParameters,
+            iceCandidates: transport.iceCandidates,
+          });
+        }
+      });
+    
+    await transport.connect({ dtlsParameters });
+    callback({ success: true });
+  } catch (err) {
+    console.error('connectTransport error:', err.message);
+    callback({ error: err.message });
+  }
+});
     // Le reste de ton code (produce, consume, etc.) reste identique
     socket.on('produce', async ({ roomId, kind, rtpParameters }, callback) => {
       try {
