@@ -1,22 +1,42 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 
 export default function VideoPlayer({ stream, userName, muted = false }) {
   const videoRef = useRef(null);
+  const [needsClick, setNeedsClick] = useState(false);
 
   useEffect(() => {
     const video = videoRef.current;
-    if (!video) return;
+    if (!video || !stream) return;
 
-    if (stream) {
-      video.srcObject = stream;
-      video.play().catch(err => console.warn('autoplay blocked:', err.message));
-    } else {
-      video.srcObject = null;
-    }
+    video.srcObject = stream;
+
+    const playVideo = async () => {
+      try {
+        await video.play();
+        setNeedsClick(false);
+        console.log('✅ Video playing:', userName);
+      } catch (err) {
+        console.warn('⚠️ Autoplay blocked:', err.message);
+        setNeedsClick(true);
+      }
+    };
+
+    playVideo();
   }, [stream]);
 
+  const handleClick = async () => {
+    const video = videoRef.current;
+    if (!video) return;
+    try {
+      await video.play();
+      setNeedsClick(false);
+    } catch (err) {
+      console.error('play error:', err);
+    }
+  };
+
   return (
-    <div style={styles.container}>
+    <div style={styles.container} onClick={handleClick}>
       <video
         ref={videoRef}
         autoPlay
@@ -25,8 +45,13 @@ export default function VideoPlayer({ stream, userName, muted = false }) {
         style={styles.video}
       />
       {!stream && (
-        <div style={styles.placeholder}>
-          <span style={styles.placeholderText}>En attente...</span>
+        <div style={styles.overlay}>
+          <span style={styles.text}>En attente...</span>
+        </div>
+      )}
+      {needsClick && (
+        <div style={styles.overlay}>
+          <span style={styles.text}>👆 Cliquez pour démarrer</span>
         </div>
       )}
       <span style={styles.name}>{userName}</span>
@@ -42,20 +67,22 @@ const styles = {
     backgroundColor: '#0f3460',
     width: '320px',
     height: '240px',
+    cursor: 'pointer',
   },
   video: {
     width: '100%',
     height: '100%',
     objectFit: 'cover',
   },
-  placeholder: {
+  overlay: {
     position: 'absolute',
     inset: 0,
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.4)',
   },
-  placeholderText: { color: '#fff', fontSize: '14px' },
+  text: { color: '#fff', fontSize: '14px' },
   name: {
     position: 'absolute',
     bottom: '8px',
